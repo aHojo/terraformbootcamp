@@ -77,3 +77,27 @@ groups values of different types
 # Count Meta-argument
 - count is used to manage similar resources 
 - count and for_each are looping techniques
+
+# Manage secrets using terraform
+- should store the tfstate file in a backend that supports encryption
+## Storing secrets using variables
+*using the 2 below it still goes into your state file*
+- use a variable file
+- env var export `TF_VAR_db_password="mypass12345"` for example
+
+## using secrets manager
+- hashicorp vault
+- aws secrets manager
+- gpc secret manager
+
+# Terraform Modules
+- updates may cause problems in different parts of your config
+- you'll repeat parts of your config
+- sharing isn't easy
+- Organize, encapsulate, re-use config and ensure best practices
+
+
+A module is a setof config files in a single directory
+Module Types:
+local
+remote 

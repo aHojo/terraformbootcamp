@@ -2,50 +2,46 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "4.40.0"
+      version = "~> 3.0"
     }
   }
 }
 
-
-
+# Configure the AWS Provider
 provider "aws" {
-  region     = "us-east-1"
-  secret_key = var.aws_secret_key
-  access_key = var.aws_access_key
-
+  region     = var.region
+  access_key = ""
+  secret_key = ""
 }
 
-# resource "<provider>_<resource_type>" "<local_name>" {
-#   .... config options
-# } 
 
+# Create a VPC.
 resource "aws_vpc" "main" {
   cidr_block = var.vpc_cidr_block
-
   tags = {
-    "Name" = "Main VPC"
+    "Name" = "Production ${var.main_vpc_name}."
   }
 }
 
-# create a subnet
+# Create a subnet in the VPC
 resource "aws_subnet" "web" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = var.web_subnet
   availability_zone = var.subnet_zone
   tags = {
-    "Name" = "Web Subnet"
+    "Name" = "web-subnet"
   }
 }
 
+# Create an Internet Gateway Resource
 resource "aws_internet_gateway" "my_web_igw" {
   vpc_id = aws_vpc.main.id
-
   tags = {
-    "Name" = "${var.vpc_main_name} IGW"
+    "Name" = "${var.main_vpc_name} IGW"
   }
 }
 
+# Associate the IGW to the default RT
 resource "aws_default_route_table" "main_vpc_default_rt" {
   default_route_table_id = aws_vpc.main.default_route_table_id
 
@@ -58,81 +54,73 @@ resource "aws_default_route_table" "main_vpc_default_rt" {
   }
 }
 
+# Setting Up the Default Security Group
 resource "aws_default_security_group" "default_sec_group" {
   vpc_id = aws_vpc.main.id
+
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    # cidr_blocks = [var.my_public_ip]
   }
   ingress {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    # cidr_blocks = [var.my_public_ip]
   }
   ingress {
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    # cidr_blocks = [var.my_public_ip]
   }
-  # Below allow everything
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port       = 0
+    to_port         = 0
+    protocol        = "-1"
+    cidr_blocks     = ["0.0.0.0/0"]
+    prefix_list_ids = []
   }
   tags = {
-    "Name" = "Default security group"
+    "Name" = "Default Security Group"
   }
 }
 
 resource "aws_key_pair" "test_ssh_key" {
-  key_name   = "testing_ssh_key"
-  public_key = file(var.ssh_public_key)
+  key_name = "testing-ssh-key"
+
+  # reads the contents of a file at the given path and returns them as a string
+  public_key = file("./test_rsa.pub")
 }
 
-data "aws_ami" "latest_amazon_linux2" {
-  owners      = ["amazon"]
-  most_recent = true
-
-  filter {
-    name   = "name"
-    values = ["amzn2-ami-kernel-*-x86_64-gp2"]
-  }
-  filter {
-    name   = "architecture"
-    values = ["x86_64"]
-  }
-
-}
-data "template_file" "user_data" {
-  template = file("./web-app-template.yaml")
+locals {
+  # timestamp() returns a UTC timestamp string in RFC 3339 format
+  # formatdate() converts a timestamp into a different time format.
+  time = formatdate("DD MM YYYY hh:mm", timestamp())
 }
 
+# Fetching and Spinning up an EC2 instance
 resource "aws_instance" "my_vm" {
-  ami                         = data.aws_ami.latest_amazon_linux2.id
-  instance_type               = "t2.micro"
+  # ami           = "ami-05cafdf7c9f772ad2"
+  # built-in function
+  # retrieves the value of a single element from a map, given its key
+  ami = lookup(var.ami, var.region)
+
+  instance_type = "t2.micro"
+
   subnet_id                   = aws_subnet.web.id
   vpc_security_group_ids      = [aws_default_security_group.default_sec_group.id]
   associate_public_ip_address = true
   key_name                    = aws_key_pair.test_ssh_key.key_name
 
-  # user_data = <<EOF
-  # #!/bin/bash
-  # sudo yum -y update && sudo yum -y install httpd
-  # sudo systemctl start httpd && sudo systemctl enable httpd
-  # sudo echo <h1>Deployed via Terraform</h1> > /var/www/html/index.html
-  # EOF
-  user_data = data.template_file.user_data.rendered
-  # user_data = file("entry-script.sh")
+  # built-in function
+  # reads the contents of a file at the given path and returns them as a string
+  user_data = file("${path.root}/entry-script.sh")
+
   tags = {
-    "Name" = "My EC2"
+    "Name" = "My EC2 Instance Amazon Linux 2"
+    "X"    = "123"
   }
 }
